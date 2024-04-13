@@ -21,6 +21,7 @@ tell application "System Events"
 						repeat with childElement in childElements
 							if childElement's size is copyLinkShareButtonSize then
 								click childElement
+								delay 0.1
 								return (the clipboard as text)
 								exit repeat
 							end if

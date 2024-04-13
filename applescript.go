@@ -11,7 +11,7 @@ import (
 	"strings"
 )
 
-const newFaceTimeLinkScript = "./lib/createLink.applscript"
+const newFaceTimeLinkScript = "./lib/createLink.applescript"
 const getActiveFaceTimeLinksScript = "./lib/getLinks.applescript"
 const joinLatestFaceTimeLinkScript = "./lib/joinFirstLinkApproveAll.applescript"
 const deleteFaceTimeLinkScript = "./lib/deleteLink.applescript"
