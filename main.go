@@ -39,10 +39,7 @@ func main() {
 
 //TODO make routines
 //TODO set timeouts
-///
 //TODO make sure we only process certain requests one at a time
-//
-// TODO make sure we dont exit 1 on error where possible, and instead abort the request with a 500
 
 func getStatus(c *gin.Context) {
 	fmt.Println("Received status check request")
@@ -51,26 +48,42 @@ func getStatus(c *gin.Context) {
 
 func routeGetActiveLinks(c *gin.Context) {
 	fmt.Println("Received request for current facetime links")
-	allLinks := getAllLinks()
+	allLinks, err := getAllLinks()
+	if err != nil {
+		fmt.Println("Failed to retrieve current links: ", err)
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
 	fmt.Println("retrieved links:" + strings.Join(allLinks, ", "))
 	var allFtLinksInfo []linkInfo
+	badLinks := false
 	for _, l := range allLinks {
 		ftL := ftLink(l)
 		if !ftL.isValid() {
-			fmt.Println("Got invalid link: '" + l + "'") //TODO warn
+			badLinks = true
+			fmt.Println("Got invalid link: '" + l + "'")
 			continue
 		}
 		newFtLinkInfo := linkInfo{Link: ftL.getUrl()}
 		allFtLinksInfo = append(allFtLinksInfo, newFtLinkInfo)
 	}
+	if badLinks {
+		fmt.Println("Found links but unable to validate formatting of any.")
+		c.AbortWithStatus(http.StatusInternalServerError)
+	}
 	c.JSON(http.StatusOK, allFtLinksInfo)
 }
 
 func routeNewLink(c *gin.Context) {
-	newLink := makeNewLink()
+	newLink, err := makeNewLink()
+	if err != nil {
+		fmt.Println("Failed to make new link:", err)
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
 	newFtLink := ftLink(newLink)
 	if !newFtLink.isValid() {
-		fmt.Println("Got an invalid link: '" + newLink + "'")
+		fmt.Print("Got an invalid link:'" + newLink + "'\n")
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
@@ -90,7 +103,12 @@ func routeJoinLink(c *gin.Context) {
 		return
 	}
 
-	joinLink(string(linkToJoin))
+	err = joinLink(string(linkToJoin))
+	if err != nil {
+		fmt.Println("Failed to join link:", err)
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
 	c.JSON(http.StatusOK, linkJoinInfo{Link: linkToJoin, Joined: true})
 }
 
@@ -107,9 +125,12 @@ func routeDeleteLink(c *gin.Context) {
 		return
 	}
 
-	wasDeleted := deleteLink(string(linkToDelete))
+	wasDeleted, err := deleteLink(string(linkToDelete))
 	var deleteStatus int
-	if !wasDeleted {
+	if err != nil {
+		fmt.Println("Link", linkToDelete, "was not able to be deleted due to an error:", err)
+		deleteStatus = http.StatusInternalServerError
+	} else if !wasDeleted {
 		fmt.Println("Link", linkToDelete, "was not found for deletion.")
 		deleteStatus = http.StatusNotFound
 	} else {

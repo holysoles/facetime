@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -16,56 +17,54 @@ const getActiveFaceTimeLinksScript = "./lib/getLinks.applescript"
 const joinLatestFaceTimeLinkScript = "./lib/joinFirstLinkApproveAll.applescript"
 const deleteFaceTimeLinkScript = "./lib/deleteLink.applescript"
 
-func makeNewLink() string {
-	newLScript := loadAppleScript(newFaceTimeLinkScript)
+func makeNewLink() (string, error) {
+	newLScript, err := loadAppleScript(newFaceTimeLinkScript)
+	if err != nil {
+		return "", nil
+	}
 	newLink, err := execAppleScript(newLScript)
-	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
-	}
-	return newLink
+	return newLink, err
 }
 
-func getAllLinks() []string {
-	getLScript := loadAppleScript(getActiveFaceTimeLinksScript)
+func getAllLinks() ([]string, error) {
+	getLScript, err := loadAppleScript(getActiveFaceTimeLinksScript)
+	if err != nil {
+		return make([]string, 0), nil
+	}
 	allLinksRaw, err := execAppleScript(getLScript)
-	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
-	}
 	allLinks := strings.Split(allLinksRaw, ", ")
-	return allLinks
+	return allLinks, err
 }
 
-func joinLink(l string) {
-	joinScript := loadAppleScript(joinLatestFaceTimeLinkScript)
-	_, err := execAppleScript(joinScript)
+func joinLink(l string) error {
+	joinScript, err := loadAppleScript(joinLatestFaceTimeLinkScript)
 	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
+		return err
 	}
-	return
+	_, err = execAppleScript(joinScript)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
-func deleteLink(l string) bool {
-	deleteScript := loadAppleScript(deleteFaceTimeLinkScript)
+func deleteLink(l string) (bool, error) {
+	deleteScript, err := loadAppleScript(deleteFaceTimeLinkScript)
+	if err != nil {
+		return false, err
+	}
 	deleteScript = fmt.Sprintf(deleteScript, l)
 	deletedStr, err := execAppleScript(deleteScript)
 	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
+		return false, err
 	}
 	deleted, _ := strconv.ParseBool(deletedStr)
-	return deleted
+	return deleted, nil
 }
 
-func loadAppleScript(p string) string {
+func loadAppleScript(p string) (string, error) {
 	fB, err := os.ReadFile(p)
-	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
-	}
-	return string(fB)
+	return string(fB), err
 }
 
 func execAppleScript(s string) (string, error) {
@@ -78,8 +77,7 @@ func execAppleScript(s string) (string, error) {
 	var err error
 	stdin, err = cmd.StdinPipe()
 	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
+		return "", err
 	}
 	cmd.Stdout = &outBuff
 	cmd.Stderr = &errorBuff
@@ -89,10 +87,12 @@ func execAppleScript(s string) (string, error) {
 	stdin.Close()
 
 	err = cmd.Wait()
+	// prefer returning errors from script execution
+	if errorBuff.Len() != 0 {
+		return "", errors.New(errorBuff.String())
+	}
 	if err != nil {
-		fmt.Println(err)
-		fmt.Println(errorBuff.String())
-		os.Exit(1)
+		return "", err
 	}
 
 	//osaScript output has a tailing newline, making any later parse logic difficult
