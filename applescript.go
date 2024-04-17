@@ -36,7 +36,8 @@ func getAllLinks() ([]string, error) {
 	return allLinks, err
 }
 
-func joinLink(l string) error {
+// TODO
+func joinCall(l string) error {
 	joinScript, err := loadAppleScript(joinLatestFaceTimeLinkScript)
 	if err != nil {
 		return err
@@ -48,12 +49,12 @@ func joinLink(l string) error {
 	return nil
 }
 
-func deleteLink(l string) (bool, error) {
+func deleteCall(id string) (bool, error) {
 	deleteScript, err := loadAppleScript(deleteFaceTimeLinkScript)
 	if err != nil {
 		return false, err
 	}
-	deleteScript = fmt.Sprintf(deleteScript, l)
+	deleteScript = fmt.Sprintf(deleteScript, id)
 	deletedStr, err := execAppleScript(deleteScript)
 	if err != nil {
 		return false, err
