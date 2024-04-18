@@ -32,7 +32,10 @@ func getAllLinks() ([]string, error) {
 		return make([]string, 0), nil
 	}
 	allLinksRaw, err := execAppleScript(getLScript)
-	allLinks := strings.Split(allLinksRaw, ", ")
+	var allLinks []string
+	if allLinksRaw != "" {
+		allLinks = strings.Split(allLinksRaw, ", ")
+	}
 	return allLinks, err
 }
 
