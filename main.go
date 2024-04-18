@@ -12,11 +12,15 @@ import (
 )
 
 var (
+	processLock = false // http stdlib uses goroutine to process requests. We don't handle parallel applescript though
+
+	ErrBusy             = errors.New("the server is currently busy processing another request")
 	ErrMalformattedLink = errors.New("the url could not be validated against the facetime url format")
 )
 
 type status struct {
-	Msg string
+	ServerStatus string `json:"server_status"`
+	Busy         bool   `json:"busy"`
 }
 type ftLink string
 type linkInfo struct {
@@ -33,7 +37,7 @@ type deleteLinkResponse struct {
 
 func main() {
 	router := gin.Default()
-	router.GET("/status", getStatus)
+	router.GET("/status", routeGetStatus)
 
 	router.GET("/link", routeGetActiveLinks)
 	router.POST("/link/new", routeNewLink)
@@ -43,24 +47,33 @@ func main() {
 	router.Run("localhost:8080")
 }
 
-//TODO set timeouts
-//TODO make sure we only process certain requests one at a time
-
-func getStatus(c *gin.Context) {
+func routeGetStatus(c *gin.Context) {
 	fmt.Println("Received status check request")
-	c.IndentedJSON(http.StatusOK, status{"Server is running!"})
+	c.IndentedJSON(http.StatusOK, status{ServerStatus: "running", Busy: processLock})
 }
 
 func routeGetActiveLinks(c *gin.Context) {
 	fmt.Println("Received request for current facetime links")
+	err := initSession()
+	defer closeSession()
+	if err == ErrBusy {
+		fmt.Println(err)
+		c.AbortWithStatus(http.StatusServiceUnavailable)
+		return
+	} else if err != nil {
+		fmt.Println("Unhandled error in initializing FaceTime:", err)
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+
 	allLinks, err := getAllLinks()
 	if err != nil {
-		fmt.Println("Failed to retrieve current links: ", err)
+		fmt.Println("Failed to retrieve current links:", err)
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
 	fmt.Println("retrieved links:" + strings.Join(allLinks, ", "))
-	var allFtLinksInfo []linkInfo
+	allFtLinksInfo := []linkInfo{}
 	badLinks := false
 	for _, l := range allLinks {
 		ftL := ftLink(l)
@@ -81,6 +94,18 @@ func routeGetActiveLinks(c *gin.Context) {
 }
 
 func routeNewLink(c *gin.Context) {
+	err := initSession()
+	defer closeSession()
+	if err == ErrBusy {
+		fmt.Println(err)
+		c.AbortWithStatus(http.StatusServiceUnavailable)
+		return
+	} else if err != nil {
+		fmt.Println("Unhandled error in initializing FaceTime:", err)
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+
 	newLink, err := makeNewLink()
 	if err != nil {
 		fmt.Println("Failed to make new link:", err)
@@ -111,6 +136,18 @@ func routeJoinLink(c *gin.Context) {
 	}
 	idToJoin := linkToJoin.getId()
 
+	err = initSession()
+	defer closeSession()
+	if err == ErrBusy {
+		fmt.Println(err)
+		c.AbortWithStatus(http.StatusServiceUnavailable)
+		return
+	} else if err != nil {
+		fmt.Println("Unhandled error in initializing FaceTime:", err)
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+
 	err = joinCall(string(idToJoin))
 	if err != nil {
 		fmt.Println("Failed to join link:", err)
@@ -134,6 +171,18 @@ func routeDeleteLink(c *gin.Context) {
 	}
 	idToDelete := linkToDelete.getId()
 
+	err = initSession()
+	defer closeSession()
+	if err == ErrBusy {
+		fmt.Println(err)
+		c.AbortWithStatus(http.StatusServiceUnavailable)
+		return
+	} else if err != nil {
+		fmt.Println("Unhandled error in initializing FaceTime:", err)
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+
 	wasDeleted, err := deleteCall(string(idToDelete))
 	var deleteStatus int
 	if err != nil {
@@ -147,6 +196,21 @@ func routeDeleteLink(c *gin.Context) {
 		deleteStatus = http.StatusOK
 	}
 	c.JSON(deleteStatus, deleteLinkResponse{Link: linkToDelete, Deleted: wasDeleted})
+}
+
+// Initializes and asserts system preparedness for calls to Facetime. Should be called before processing any user request.
+func initSession() error {
+	if processLock {
+		return ErrBusy
+	}
+	processLock = true
+	return nil
+	// TODO test if we can open facetime
+}
+
+// Dispose and closes lock for the active request. Should always be called after request processing is complete.
+func closeSession() {
+	processLock = false
 }
 
 // Returns a well-formed URL for the FT link. Can be used for validation.
