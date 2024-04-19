@@ -12,22 +12,48 @@ import (
 	"strings"
 )
 
-const newFaceTimeLinkScript = "./lib/createLink.applescript"
-const getActiveFaceTimeLinksScript = "./lib/getLinks.applescript"
-const joinLatestFaceTimeLinkScript = "./lib/joinFirstLinkApproveAll.applescript"
-const deleteFaceTimeLinkScript = "./lib/deleteLink.applescript"
+const openFacetimeScript = "./lib/openFacetime.applescript"
+const checkFacetimeScript = "./lib/checkFacetime.applescript"
+const newLinkScript = "./lib/createLink.applescript"
+const getActiveLinksScript = "./lib/getLinks.applescript"
+const joinLatestLinkScript = "./lib/joinFirstLink.applescript"
+const approveJoinScript = "./lib/approveJoin.applescript"
+const joinLatestLinkAndApproveScript = "./lib/joinFirstLinkApproveJoin.applescript"
+const deleteLinkScript = "./lib/deleteLink.applescript"
+
+func openFacetime() error {
+	oFtScript, err := loadAppleScript(openFacetimeScript)
+	if err != nil {
+		return err
+	}
+	_, err = execAppleScript(oFtScript)
+	return err
+}
+
+func getFacetimeStatus() (bool, error) {
+	cFtScript, err := loadAppleScript(checkFacetimeScript)
+	if err != nil {
+		return false, err
+	}
+	s, err := execAppleScript(cFtScript)
+	if err != nil {
+		return false, err
+	}
+	b, err := strconv.ParseBool(s)
+	return b, err
+}
 
 func makeNewLink() (string, error) {
-	newLScript, err := loadAppleScript(newFaceTimeLinkScript)
+	newLScript, err := loadAppleScript(newLinkScript)
 	if err != nil {
-		return "", nil
+		return "", err
 	}
 	newLink, err := execAppleScript(newLScript)
 	return newLink, err
 }
 
 func getAllLinks() ([]string, error) {
-	getLScript, err := loadAppleScript(getActiveFaceTimeLinksScript)
+	getLScript, err := loadAppleScript(getActiveLinksScript)
 	if err != nil {
 		return make([]string, 0), nil
 	}
@@ -39,9 +65,34 @@ func getAllLinks() ([]string, error) {
 	return allLinks, err
 }
 
-// TODO
-func joinCall(l string) error {
-	joinScript, err := loadAppleScript(joinLatestFaceTimeLinkScript)
+// Join the latest Facetime Call.
+func joinCall() error {
+	joinScript, err := loadAppleScript(joinLatestLinkScript)
+	if err != nil {
+		return err
+	}
+	_, err = execAppleScript(joinScript)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+// Join the latest Facetime Call and approve all requested entrants. Combining these two actions allows us to leverage the sidebar being automatically in focus.
+func joinAndAdmitCall() error {
+	joinScript, err := loadAppleScript(joinLatestLinkAndApproveScript)
+	if err != nil {
+		return err
+	}
+	_, err = execAppleScript(joinScript)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func admitActiveCall() error {
+	joinScript, err := loadAppleScript(approveJoinScript)
 	if err != nil {
 		return err
 	}
@@ -53,7 +104,7 @@ func joinCall(l string) error {
 }
 
 func deleteCall(id string) (bool, error) {
-	deleteScript, err := loadAppleScript(deleteFaceTimeLinkScript)
+	deleteScript, err := loadAppleScript(deleteLinkScript)
 	if err != nil {
 		return false, err
 	}

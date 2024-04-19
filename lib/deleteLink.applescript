@@ -1,7 +1,6 @@
 set deleteTarget to "%s"
 set foundMatch to false
 
-do shell script "open facetime://"
 tell application "System Events"
 	tell application process "FaceTime"
 		tell first window -- default window

@@ -1,7 +1,6 @@
 set copyLinkShareButtonSize to {216, 22}
 set linkList to {}
 
-do shell script "open facetime://"
 tell application "System Events"
 	tell application process "FaceTime"
 		tell first window -- default window

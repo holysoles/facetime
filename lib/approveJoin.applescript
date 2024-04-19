@@ -1,4 +1,4 @@
--- requires facetime to already be open
+-- requires facetime to already be open, in a call, with mouse focus
 tell application "System Events"
 	tell first window of application process "FaceTime"
 		tell list 1 of list 1 of scroll area 2

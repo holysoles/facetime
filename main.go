@@ -4,8 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"net/url"
-	"regexp"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -19,10 +17,10 @@ var (
 )
 
 type status struct {
-	ServerStatus string `json:"server_status"`
-	Busy         bool   `json:"busy"`
+	ServerStatus   string `json:"server_status"`
+	FacetimeStatus bool   `json:"facetime_status"`
+	Busy           bool   `json:"busy"`
 }
-type ftLink string
 type linkInfo struct {
 	Link ftLink `json:"link"`
 }
@@ -30,7 +28,10 @@ type linkJoinInfo struct {
 	Link   ftLink `json:"link"`
 	Joined bool   `json:"joined"`
 }
-type deleteLinkResponse struct {
+type linkAdmitInfo struct {
+	Admitted bool `json:"admitted"`
+}
+type linkDeleteInfo struct {
 	Link    ftLink `json:"link"`
 	Deleted bool   `json:"deleted"`
 }
@@ -42,14 +43,22 @@ func main() {
 	router.GET("/link", routeGetActiveLinks)
 	router.POST("/link/new", routeNewLink)
 	router.POST("/link/join", routeJoinLink)
+	router.POST("/link/admit", routeAdmitLink)
 	router.DELETE("/link", routeDeleteLink)
 
+	openFacetime()
 	router.Run("localhost:8080")
 }
 
 func routeGetStatus(c *gin.Context) {
 	fmt.Println("Received status check request")
-	c.IndentedJSON(http.StatusOK, status{ServerStatus: "running", Busy: processLock})
+	res := http.StatusOK
+	fSt, err := getFacetimeStatus()
+	if err != nil {
+		fmt.Println(err)
+		res = http.StatusInternalServerError
+	}
+	c.IndentedJSON(res, status{ServerStatus: "running", FacetimeStatus: fSt, Busy: processLock})
 }
 
 func routeGetActiveLinks(c *gin.Context) {
@@ -123,20 +132,7 @@ func routeNewLink(c *gin.Context) {
 }
 
 func routeJoinLink(c *gin.Context) {
-	var requestInfo linkInfo
-	err := c.BindJSON(&requestInfo)
-	if err != nil {
-		c.AbortWithStatus(http.StatusBadRequest)
-		return
-	}
-	linkToJoin, err := requestInfo.Link.getUrl()
-	if err != nil {
-		c.AbortWithStatus(http.StatusBadRequest)
-		return
-	}
-	idToJoin := linkToJoin.getId()
-
-	err = initSession()
+	err := initSession()
 	defer closeSession()
 	if err == ErrBusy {
 		fmt.Println(err)
@@ -148,13 +144,37 @@ func routeJoinLink(c *gin.Context) {
 		return
 	}
 
-	err = joinCall(string(idToJoin))
+	err = joinAndAdmitCall()
 	if err != nil {
 		fmt.Println("Failed to join link:", err)
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
+	//TODO can still return link info
+	linkToJoin := ftLink("placeholder")
 	c.JSON(http.StatusOK, linkJoinInfo{Link: linkToJoin, Joined: true})
+}
+
+func routeAdmitLink(c *gin.Context) {
+	err := initSession()
+	defer closeSession()
+	if err == ErrBusy {
+		fmt.Println(err)
+		c.AbortWithStatus(http.StatusServiceUnavailable)
+		return
+	} else if err != nil {
+		fmt.Println("Unhandled error in initializing FaceTime:", err)
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+
+	err = admitActiveCall()
+	if err != nil {
+		fmt.Println("Failed to admit participants to link:", err)
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+	c.JSON(http.StatusOK, linkAdmitInfo{Admitted: true})
 }
 
 func routeDeleteLink(c *gin.Context) {
@@ -195,55 +215,5 @@ func routeDeleteLink(c *gin.Context) {
 		fmt.Println("Link", linkToDelete, "was successfully deleted.")
 		deleteStatus = http.StatusOK
 	}
-	c.JSON(deleteStatus, deleteLinkResponse{Link: linkToDelete, Deleted: wasDeleted})
-}
-
-// Initializes and asserts system preparedness for calls to Facetime. Should be called before processing any user request.
-func initSession() error {
-	if processLock {
-		return ErrBusy
-	}
-	processLock = true
-	return nil
-	// TODO test if we can open facetime
-}
-
-// Dispose and closes lock for the active request. Should always be called after request processing is complete.
-func closeSession() {
-	processLock = false
-}
-
-// Returns a well-formed URL for the FT link. Can be used for validation.
-func (f *ftLink) getUrl() (ftLink, error) {
-	fStr := string(*f)
-	fUrl, err := url.Parse(fStr)
-	if err != nil {
-		fmt.Println("Unable to parse link to a valid URL object")
-		return "", ErrMalformattedLink
-	}
-	if fUrl.Host != "facetime.apple.com" {
-		fmt.Println("URL host failed validation")
-		return "", ErrMalformattedLink
-	}
-	if fUrl.Path != "/join" {
-		fmt.Println("URL path failed validation")
-		return "", ErrMalformattedLink
-	}
-	fragFormat := regexp.MustCompile(`^v\=1\&p\=(.+)`)
-	if !(fragFormat.MatchString(fUrl.Fragment)) {
-		fmt.Println("URL fragment failed validation")
-		return "", ErrMalformattedLink
-	}
-
-	fUrl.Scheme = "https"
-	fL := ftLink(fUrl.String())
-	return fL, err
-}
-
-// Strips the scheme from the URL for lookup in the FT call table
-func (f *ftLink) getId() ftLink {
-	fUrl := string(*f)
-	// TODO would be nice to do this w a better parser
-	fId := strings.Replace(fUrl, "https://", "", 1)
-	return ftLink(fId)
+	c.JSON(deleteStatus, linkDeleteInfo{Link: linkToDelete, Deleted: wasDeleted})
 }
