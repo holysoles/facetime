@@ -22,6 +22,10 @@ Note: User(s) must have already requested to join the call.
 ```bash
 curl --location --request POST 'http://localhost:8080/link/join'
 ```
+### Have the server user leave the call
+```bash
+curl --location --request POST 'http://localhost:8080/link/leave'
+```
 ### Delete a call from the list
 ```bash
 curl --location --request DELETE 'http://localhost:8080/link' \

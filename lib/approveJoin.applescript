@@ -1,18 +1,30 @@
--- requires facetime to already be open, in a call, with mouse focus
+-- requires facetime to already be open, in a call, with the sidebar already toggled open
+-- returns list of users that were admitted to the call
+set admittedUsers to {}
 tell application "System Events"
 	tell first window of application process "FaceTime"
-		tell list 1 of list 1 of scroll area 2
-			repeat with aUser in (every group as list)
-				tell aUser
-					repeat with checkImage in every image -- check if the element is a user row
-						if description of checkImage is "contact silhouette" then
+		tell scroll area 2
+			tell list 1 -- description "Conversation Details"
+				tell list 1 -- description "X people" where X is people already in call that aren't the host
+					repeat with aPossibleUser in (every group as list)
+						tell aPossibleUser
+							set isUser to false
 							tell (first button where description is "Approve join request")
-								click
+								if (exists) then
+									set isUser to true
+									--click it
+								end if
 							end tell
-						end if
+							if isUser then
+								tell static text 1
+									set admittedUsers to admittedUsers & value of it
+								end tell
+							end if
+						end tell
 					end repeat
 				end tell
-			end repeat
+			end tell
 		end tell
 	end tell
 end tell
+return admittedUsers

@@ -31,6 +31,9 @@ type linkJoinInfo struct {
 type linkAdmitInfo struct {
 	Admitted bool `json:"admitted"`
 }
+type linkLeaveInfo struct {
+	Left bool `json:"left"`
+}
 type linkDeleteInfo struct {
 	Link    ftLink `json:"link"`
 	Deleted bool   `json:"deleted"`
@@ -44,6 +47,7 @@ func main() {
 	router.POST("/link/new", routeNewLink)
 	router.POST("/link/join", routeJoinLink)
 	router.POST("/link/admit", routeAdmitLink)
+	router.POST("/link/leave", routeLeaveLink)
 	router.DELETE("/link", routeDeleteLink)
 
 	openFacetime()
@@ -175,6 +179,28 @@ func routeAdmitLink(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, linkAdmitInfo{Admitted: true})
+}
+
+func routeLeaveLink(c *gin.Context) {
+	err := initSession()
+	defer closeSession()
+	if err == ErrBusy {
+		fmt.Println(err)
+		c.AbortWithStatus(http.StatusServiceUnavailable)
+		return
+	} else if err != nil {
+		fmt.Println("Unhandled error in initializing FaceTime:", err)
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+
+	err = leaveCall()
+	if err != nil {
+		fmt.Println("Failed to have host leave call:", err)
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+	c.JSON(http.StatusOK, linkLeaveInfo{Left: true})
 }
 
 func routeDeleteLink(c *gin.Context) {

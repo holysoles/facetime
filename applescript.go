@@ -19,6 +19,7 @@ const getActiveLinksScript = "./lib/getLinks.applescript"
 const joinLatestLinkScript = "./lib/joinFirstLink.applescript"
 const approveJoinScript = "./lib/approveJoin.applescript"
 const joinLatestLinkAndApproveScript = "./lib/joinFirstLinkApproveJoin.applescript"
+const leaveCallScript = "./lib/leaveCall.applescript"
 const deleteLinkScript = "./lib/deleteLink.applescript"
 
 func openFacetime() error {
@@ -103,6 +104,18 @@ func admitActiveCall() error {
 	return nil
 }
 
+func leaveCall() error {
+	leaveScript, err := loadAppleScript(leaveCallScript)
+	if err != nil {
+		return err
+	}
+	_, err = execAppleScript(leaveScript)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 func deleteCall(id string) (bool, error) {
 	deleteScript, err := loadAppleScript(deleteLinkScript)
 	if err != nil {
@@ -123,7 +136,6 @@ func loadAppleScript(p string) (string, error) {
 }
 
 func execAppleScript(s string) (string, error) {
-	//TODO have a safe FT process init check
 	args := "-"
 	cmd := exec.Command("osascript", args)
 
