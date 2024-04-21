@@ -1,170 +1,261 @@
 package main
 
-import (
-	"bytes"
-	"errors"
-	"fmt"
-	"io"
-	"os"
-	"os/exec"
-	"regexp"
-	"strconv"
-	"strings"
-)
+const openFacetimeScript = `
+do shell script "open facetime://"
+delay 2
+`
 
-const openFacetimeScript = "./lib/openFacetime.applescript"
-const checkFacetimeScript = "./lib/checkFacetime.applescript"
-const newLinkScript = "./lib/createLink.applescript"
-const getActiveLinksScript = "./lib/getLinks.applescript"
-const joinLatestLinkScript = "./lib/joinFirstLink.applescript"
-const approveJoinScript = "./lib/approveJoin.applescript"
-const joinLatestLinkAndApproveScript = "./lib/joinFirstLinkApproveJoin.applescript"
-const leaveCallScript = "./lib/leaveCall.applescript"
-const deleteLinkScript = "./lib/deleteLink.applescript"
+const checkFacetimeScript = `
+tell application "System Events"
+    set isRunning to (exists process "FaceTime")
+end tell
+return isRunning
+`
 
-func openFacetime() error {
-	oFtScript, err := loadAppleScript(openFacetimeScript)
-	if err != nil {
-		return err
-	}
-	_, err = execAppleScript(oFtScript)
-	return err
-}
+const newLinkScript = `
+set copyLinkShareButtonSize to {216, 22}
 
-func getFacetimeStatus() (bool, error) {
-	cFtScript, err := loadAppleScript(checkFacetimeScript)
-	if err != nil {
-		return false, err
-	}
-	s, err := execAppleScript(cFtScript)
-	if err != nil {
-		return false, err
-	}
-	b, err := strconv.ParseBool(s)
-	return b, err
-}
+tell application "System Events"
+	tell application process "FaceTime"
+		tell first window
+			repeat until (button "Create Link" exists)
+				delay 0.1
+			end repeat
+			tell button "Create Link"
+				click
+				repeat until (first pop over exists)
+					delay 0.1
+				end repeat
+				tell first pop over
+					tell first group
+						repeat until (third button exists)
+							delay 0.1
+						end repeat
+						set childElements to every UI element
+						repeat with childElement in childElements
+							if childElement's size is copyLinkShareButtonSize then
+								click childElement
+								delay 0.1
+								return (the clipboard as text)
+								exit repeat
+							end if
+						end repeat
+					end tell
+				end tell
+			end tell
+		end tell
+	end tell
+end tell
+`
 
-func makeNewLink() (string, error) {
-	newLScript, err := loadAppleScript(newLinkScript)
-	if err != nil {
-		return "", err
-	}
-	newLink, err := execAppleScript(newLScript)
-	return newLink, err
-}
+const getActiveLinksScript = `
+set linkList to {}
 
-func getAllLinks() ([]string, error) {
-	getLScript, err := loadAppleScript(getActiveLinksScript)
-	if err != nil {
-		return make([]string, 0), nil
-	}
-	allLinksRaw, err := execAppleScript(getLScript)
-	var allLinks []string
-	if allLinksRaw != "" {
-		allLinks = strings.Split(allLinksRaw, ", ")
-	}
-	return allLinks, err
-}
+tell application "System Events"
+	tell application process "FaceTime"
+		tell first window -- default window
+			tell second scroll area -- unlabelled
+				tell (first list where description is "Recent Calls")
+					if (first list where description is "Upcoming" exists)
+						tell (first list where description is "Upcoming")
+							repeat with linkEntry in every group
+								tell linkEntry
+									repeat with anAction in (actions as list)
+										if (description of anAction) is "Info" then
+											set desiredAction to anAction
+											exit repeat
+										end if
+									end repeat
+									perform desiredAction
+									repeat until (first pop over exists)
+										delay 0.1
+									end repeat
+									tell first pop over
+										set linkList to (linkList & (name of (first static text where name contains "facetime.apple.com")))
+									end tell
+								end tell
+							end repeat
+						end tell
+					end if
+				end tell
+			end tell
+		end tell
+	end tell
+end tell
+return linkList
+`
 
-// Join the latest Facetime Call.
-func joinCall() error {
-	joinScript, err := loadAppleScript(joinLatestLinkScript)
-	if err != nil {
-		return err
-	}
-	_, err = execAppleScript(joinScript)
-	if err != nil {
-		return err
-	}
-	return nil
-}
+const joinLatestLinkScript = `
+tell application "System Events"
+	tell application process "FaceTime"
+		tell first window -- default window
+			tell scroll area 2 -- unlabelled
+				tell (first list where description is "Recent Calls")
+					tell (first list where description is "Upcoming")
+						tell first group -- most recently created call/link
+							repeat with anAction in (actions as list)
+								if (description of anAction) is "FaceTime Video" then
+									set desiredAction to anAction
+									exit repeat
+								end if
+							end repeat
+							perform desiredAction
+						end tell
+					end tell
+				end tell
+			end tell
+			tell button "Join"
+				repeat until (exists)
+					delay 0.1
+				end repeat
+				click
+			end tell
+		end tell
+	end tell
+end tell
+`
 
-// Join the latest Facetime Call and approve all requested entrants. Combining these two actions allows us to leverage the sidebar being automatically in focus.
-func joinAndAdmitCall() error {
-	joinScript, err := loadAppleScript(joinLatestLinkAndApproveScript)
-	if err != nil {
-		return err
-	}
-	_, err = execAppleScript(joinScript)
-	if err != nil {
-		return err
-	}
-	return nil
-}
+const approveJoinScript = `
+-- requires facetime to already be open, in a call, with the sidebar already toggled open
+-- returns list of users that were admitted to the call
+set admittedUsers to {}
+tell application "System Events"
+	tell first window of application process "FaceTime"
+		tell scroll area 2
+			tell list 1 -- description "Conversation Details"
+				tell list 1 -- description "X people" where X is people already in call that aren't the host
+					repeat with aPossibleUser in (every group as list)
+						tell aPossibleUser
+							set isUser to false
+							tell (first button where description is "Approve join request")
+								if (exists) then
+									set isUser to true
+									--click it
+								end if
+							end tell
+							if isUser then
+								tell static text 1
+									set admittedUsers to admittedUsers & value of it
+								end tell
+							end if
+						end tell
+					end repeat
+				end tell
+			end tell
+		end tell
+	end tell
+end tell
+return admittedUsers
+`
 
-func admitActiveCall() error {
-	joinScript, err := loadAppleScript(approveJoinScript)
-	if err != nil {
-		return err
-	}
-	_, err = execAppleScript(joinScript)
-	if err != nil {
-		return err
-	}
-	return nil
-}
+const joinLatestLinkAndApproveScript = `
+tell application "System Events"
+	tell application process "FaceTime"
+		tell first window -- default window
+			tell scroll area 2 -- unlabelled
+				tell (first list where description is "Recent Calls")
+					tell (first list where description is "Upcoming")
+						tell first group -- most recently created call/link
+							repeat with anAction in (actions as list)
+								if (description of anAction) is "FaceTime Video" then
+									set desiredAction to anAction
+									exit repeat
+								end if
+							end repeat
+							perform desiredAction
+						end tell
+					end tell
+				end tell
+			end tell
+			delay 2 -- feels unnecessary be necessary but makes joining more reliable. Seems like the camera needs to initialize first
+			tell button "Join"
+				repeat until (exists)
+					delay 0.1
+				end repeat
+				click
+			end tell
+			tell list 1 of list 1 of scroll area 2 -- poll since this needs to time to populate
+				repeat until (exists)
+					delay 0.1
+				end repeat
+				repeat with aPossibleUser in (every group as list)
+					tell aPossibleUser
+						repeat with checkImage in every image -- validate the element is a user row
+							if description of checkImage is "contact silhouette" then
+								tell (first button where description is "Approve join request") --this takes a beat to get displayed
+									repeat until (exists)
+										delay 0.1
+									end repeat
+									click
+								end tell
+							end if
+						end repeat
+					end tell
+				end repeat
+			end tell
+		end tell
+	end tell
+end tell
+`
 
-func leaveCall() error {
-	leaveScript, err := loadAppleScript(leaveCallScript)
-	if err != nil {
-		return err
-	}
-	_, err = execAppleScript(leaveScript)
-	if err != nil {
-		return err
-	}
-	return nil
-}
+const leaveCallScript = `
+-- there is a button with description "End" for properly ending a call, but is hidden unless the sidebar is in focus.
+tell application "System Events"
+	tell first window of application process "FaceTime"
+		tell attribute "AXCloseButton"
+			click its value
+		end tell
+	end tell
+end tell
+`
 
-func deleteCall(id string) (bool, error) {
-	deleteScript, err := loadAppleScript(deleteLinkScript)
-	if err != nil {
-		return false, err
-	}
-	deleteScript = fmt.Sprintf(deleteScript, id)
-	deletedStr, err := execAppleScript(deleteScript)
-	if err != nil {
-		return false, err
-	}
-	deleted, _ := strconv.ParseBool(deletedStr)
-	return deleted, nil
-}
+const deleteLinkScript = `
+set deleteTarget to "%s"
+set foundMatch to false
 
-func loadAppleScript(p string) (string, error) {
-	fB, err := os.ReadFile(p)
-	return string(fB), err
-}
-
-func execAppleScript(s string) (string, error) {
-	args := "-"
-	cmd := exec.Command("osascript", args)
-
-	var stdin io.WriteCloser
-	var outBuff, errorBuff bytes.Buffer
-	var err error
-	stdin, err = cmd.StdinPipe()
-	if err != nil {
-		return "", err
-	}
-	cmd.Stdout = &outBuff
-	cmd.Stderr = &errorBuff
-
-	cmd.Start()
-	io.WriteString(stdin, s)
-	stdin.Close()
-
-	err = cmd.Wait()
-	// prefer returning errors from script execution
-	if errorBuff.Len() != 0 {
-		return "", errors.New(errorBuff.String())
-	}
-	if err != nil {
-		return "", err
-	}
-
-	//osaScript output has a tailing newline, making any later parse logic difficult
-	var re = regexp.MustCompile(`\n$`)
-	parsedOutput := re.ReplaceAllString(outBuff.String(), "")
-
-	return parsedOutput, nil
-}
+tell application "System Events"
+	tell application process "FaceTime"
+		tell first window -- default window
+			tell second scroll area -- unlabelled
+				tell (first list where description is "Recent Calls")
+					if ((first list where description is "Upcoming") exists) then
+						tell (first list where description is "Upcoming")
+							repeat with linkEntry in every group
+								tell linkEntry
+									repeat with anAction in (actions as list)
+										if (description of anAction) is "Info" then
+											set desiredAction to anAction
+											exit repeat
+										end if
+									end repeat
+									perform desiredAction
+									repeat until (first pop over exists)
+										delay 0.1
+									end repeat
+									tell first pop over
+										repeat with checkText in (every static text as list)
+											if (name of checkText is deleteTarget) then
+												set foundMatch to true
+												click button "Delete Link"
+												exit repeat
+											end if
+										end repeat
+									end tell
+								end tell
+							end repeat
+						end tell
+					end if
+				end tell
+			end tell
+			if foundMatch then
+				tell first sheet
+					tell button "Delete Link"
+						click
+					end tell
+				end tell
+			end if
+		end tell
+	end tell
+end tell
+return foundMatch
+`
