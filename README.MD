@@ -14,6 +14,15 @@ This runs on a Mac to wrap the native FaceTime application and its interaction w
 - After downloading, ensure you set execute permissions on the executable: `chmod  u=rwx ./facetime_macos_arm64`
 - the environment variable `TRUSTED_PROXIES` should be set with the IP addresses/ranges that should be treated as proxy sources for Gin.
 
+### Registering Daemon
+
+A plist file for configuring a launchd daemon for running the web server is provided in the `/lib` folder of this repo. It can be loaded and unloaded with:
+
+```bash
+launchctl load -w ~/Library/LaunchAgents/localhost.facetime-service.plist
+launchctl unload -w ~/Library/LaunchAgents/localhost.facetime-service.plist
+```
+
 ## API Call Examples
 
 The below details API calls that can be used to initialize calls from a http client.
