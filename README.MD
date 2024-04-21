@@ -33,6 +33,10 @@ curl --location --request DELETE 'http://localhost:8080/link' \
 --data '{"link":"https://facetime.apple.com/join#v=1\u0026p=1bv0//lFFe6uYY7be8h5vw\u0026k=fkA7tz4FRASGFLc5345_pkFJ_rCQJAdJH6F8z2OGrIZ"}'
 ```
 
+## Setup
+- the environment variable `TRUSTED_PROXIES` should be set with the IP addresses/ranges that should be treated as proxy sources.
+- 
+
 ## Credits
 Special thanks to the following projects for providing essential resources:
 - [gin-gonic/gin](https://github.com/gin-gonic/gin)
