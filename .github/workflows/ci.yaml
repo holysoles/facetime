@@ -1,0 +1,50 @@
+name: Build and Release
+
+on: push
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.21"
+      - name: Install Depends
+        run: go get .
+      - name: Build amd64
+        run: GOOS=darwin GOARCH=amd64 go build -v -o ./facetime_macos_amd64
+      - name: Build arm64
+        run: GOOS=darwin GOARCH=arm64 go build -v -o ./facetime_macos_arm64
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: facetime-builds
+          path: |
+            ./facetime_macos_amd64
+            ./facetime_macos_arm64
+  release:
+    needs: build
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: facetime-builds
+      - name: Generate Tag
+        id: tag_version
+        uses: mathieudutour/github-tag-action@v6.2
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Generate Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Release ${{ steps.tag_version.outputs.new_tag }}
+          tag_name: ${{ steps.tag_version.outputs.new_tag }}
+          files: |
+            ./facetime_macos_amd64
+            ./facetime_macos_arm64

@@ -4,13 +4,14 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 )
 
 var (
-	processLock = false // http stdlib uses goroutine to process requests. We don't handle parallel applescript though
+	processLock = false // http requests processed via goroutines. We don't handle parallel applescript though
 
 	ErrBusy             = errors.New("the server is currently busy processing another request")
 	ErrMalformattedLink = errors.New("the url could not be validated against the facetime url format")
@@ -40,22 +41,26 @@ type linkDeleteInfo struct {
 }
 
 func main() {
-	router := gin.Default()
-	router.GET("/status", routeGetStatus)
+	gin.SetMode(gin.ReleaseMode)
+	r := gin.Default()
+	r.ForwardedByClientIP = true
+	prox := strings.Split(os.Getenv("TRUSTED_PROXIES"), ",")
+	r.SetTrustedProxies(prox)
 
-	router.GET("/link", routeGetActiveLinks)
-	router.POST("/link/new", routeNewLink)
-	router.POST("/link/join", routeJoinLink)
-	router.POST("/link/admit", routeAdmitLink)
-	router.POST("/link/leave", routeLeaveLink)
-	router.DELETE("/link", routeDeleteLink)
+	r.GET("/status", routeGetStatus)
+
+	r.GET("/link", routeGetActiveLinks)
+	r.POST("/link/new", routeNewLink)
+	r.POST("/link/join", routeJoinLink)
+	r.POST("/link/admit", routeAdmitLink)
+	r.POST("/link/leave", routeLeaveLink)
+	r.DELETE("/link", routeDeleteLink)
 
 	openFacetime()
-	router.Run("localhost:8080")
+	r.Run("localhost:8080")
 }
 
 func routeGetStatus(c *gin.Context) {
-	fmt.Println("Received status check request")
 	res := http.StatusOK
 	fSt, err := getFacetimeStatus()
 	if err != nil {
@@ -66,7 +71,6 @@ func routeGetStatus(c *gin.Context) {
 }
 
 func routeGetActiveLinks(c *gin.Context) {
-	fmt.Println("Received request for current facetime links")
 	err := initSession()
 	defer closeSession()
 	if err == ErrBusy {
@@ -85,7 +89,6 @@ func routeGetActiveLinks(c *gin.Context) {
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
-	fmt.Println("retrieved links:" + strings.Join(allLinks, ", "))
 	allFtLinksInfo := []linkInfo{}
 	badLinks := false
 	for _, l := range allLinks {
@@ -154,9 +157,7 @@ func routeJoinLink(c *gin.Context) {
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
-	//TODO can still return link info
-	linkToJoin := ftLink("placeholder")
-	c.JSON(http.StatusOK, linkJoinInfo{Link: linkToJoin, Joined: true})
+	c.JSON(http.StatusOK, linkJoinInfo{Link: "", Joined: true})
 }
 
 func routeAdmitLink(c *gin.Context) {
@@ -210,12 +211,12 @@ func routeDeleteLink(c *gin.Context) {
 		c.AbortWithStatus(http.StatusBadRequest)
 		return
 	}
-	linkToDelete, err := requestInfo.Link.getUrl()
+	linkD, err := requestInfo.Link.getUrl()
 	if err != nil {
 		c.AbortWithStatus(http.StatusBadRequest)
 		return
 	}
-	idToDelete := linkToDelete.getId()
+	idD := linkD.getId()
 
 	err = initSession()
 	defer closeSession()
@@ -229,17 +230,16 @@ func routeDeleteLink(c *gin.Context) {
 		return
 	}
 
-	wasDeleted, err := deleteCall(string(idToDelete))
-	var deleteStatus int
+	wasDeleted, err := deleteCall(string(idD))
+	var status int
 	if err != nil {
-		fmt.Println("Link", linkToDelete, "was not able to be deleted due to an error:", err)
-		deleteStatus = http.StatusInternalServerError
+		fmt.Println("Link", linkD, "was not able to be deleted due to an error:", err)
+		status = http.StatusInternalServerError
 	} else if !wasDeleted {
-		fmt.Println("Link", linkToDelete, "was not found for deletion.")
-		deleteStatus = http.StatusNotFound
+		fmt.Println("Link", linkD, "was not found for deletion.")
+		status = http.StatusNotFound
 	} else {
-		fmt.Println("Link", linkToDelete, "was successfully deleted.")
-		deleteStatus = http.StatusOK
+		status = http.StatusOK
 	}
-	c.JSON(deleteStatus, linkDeleteInfo{Link: linkToDelete, Deleted: wasDeleted})
+	c.JSON(status, linkDeleteInfo{Link: linkD, Deleted: wasDeleted})
 }
